@@ -15,6 +15,7 @@ import sys
 import datetime
 import requests
 import random
+import re
 import tempfile
 import time
 import base64
@@ -414,21 +415,54 @@ def get_x_clients():
     return api_v1, client_v2
 
 
+def resolve_litevideo_mp4_url(page_url):
+    """
+    DMM/FANZAの 'litevideo' URL (.../litevideo/-/part/=/cid=.../size=.../)は
+    動画ファイルそのものではなく、プレイヤーを埋め込んだHTMLページのURL。
+    そのHTMLの中から実際の .mp4 ファイルのURLを抜き出して返す。
+    既に .mp4 で終わるURLが渡された場合はそのまま返す。
+    """
+    if not page_url:
+        return ''
+    if page_url.lower().endswith('.mp4'):
+        return page_url
+
+    try:
+        resp = requests.get(
+            page_url, timeout=15,
+            headers={'User-Agent': 'Mozilla/5.0', 'Referer': 'https://www.dmm.co.jp/'},
+        )
+        resp.raise_for_status()
+    except Exception as e:
+        print(f'  ❌ litevideoページの取得に失敗: {e}')
+        return ''
+
+    # ページ内 (video/source タグ、JSの変数代入など) から .mp4 のURLを正規表現で抽出
+    candidates = re.findall(r'https?://[^\s\'"<>]+\.mp4', resp.text)
+    if not candidates:
+        print('  ⚠️  litevideoページ内に.mp4のURLが見つかりませんでした。')
+        return ''
+    # 複数見つかった場合は最初のものを採用（通常はプレイヤーが参照する1本のみ）
+    return candidates[0]
+
+
 def download_sample_video(url, max_bytes=200 * 1024 * 1024):
     """サンプル動画をダウンロードして一時ファイルに保存し、パスを返す。失敗時はNone。"""
     if not url:
         return None
+
+    mp4_url = resolve_litevideo_mp4_url(url)
+    if not mp4_url:
+        return None
+
     try:
-        resp = requests.get(url, stream=True, timeout=30)
+        resp = requests.get(
+            mp4_url, stream=True, timeout=30,
+            headers={'User-Agent': 'Mozilla/5.0', 'Referer': 'https://www.dmm.co.jp/'},
+        )
         resp.raise_for_status()
 
-        suffix = '.mp4'
-        ctype = resp.headers.get('Content-Type', '')
-        if 'mp4' not in ctype and not url.lower().endswith('.mp4'):
-            print(f'  ⚠️  動画のContent-Typeが想定外（{ctype}）。スキップします。')
-            return None
-
-        tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+        tmp = tempfile.NamedTemporaryFile(suffix='.mp4', delete=False)
         total = 0
         with tmp:
             for chunk in resp.iter_content(chunk_size=1024 * 1024):
@@ -440,6 +474,15 @@ def download_sample_video(url, max_bytes=200 * 1024 * 1024):
                     os.unlink(tmp.name)
                     return None
                 tmp.write(chunk)
+
+        # Content-Typeヘッダーは信頼できないことがあるため、
+        # 実ファイルの先頭バイト（mp4のftypボックス等）で簡易検証する。
+        with open(tmp.name, 'rb') as f:
+            head = f.read(32)
+        if total < 1024 or (b'ftyp' not in head and not head.startswith(b'\x00\x00\x00')):
+            print('  ⚠️  ダウンロードした内容が動画ファイルではないようです。スキップします。')
+            os.unlink(tmp.name)
+            return None
 
         print(f'  ✅ 動画ダウンロード完了（{total / 1024 / 1024:.1f}MB）')
         return tmp.name
