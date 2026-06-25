@@ -216,7 +216,7 @@ FLOOR_SERVICE_MAP = {
 
 HASHTAG_MAP = {
     # ベースタグ（毎回使う）＋ジャンル特化タグで露出を最大化
-    'videoa': '#FANZA #FANZAおすすめ #AV #ハイビジョン #PR',
+    'videoa': '#FANZA #FANZAおすすめ #AV #PR',
     'videoc': '#FANZA #FANZAおすすめ #素人 #個人撮影 #PR',
     'anime':  '#FANZA #FANZAおすすめ #エロアニメ #アニメ #PR',
     'doujin': '#FANZA #FANZAおすすめ #同人 #エロ同人 #PR',
@@ -648,16 +648,39 @@ def build_x_post(product, char_limit=280):
 
     text = '\n'.join(build_lines(product['genres'], copy))
 
+    # ── ① ジャンルタグを2件に絞る ──────────────────────────────────
     if x_text_length(text) > char_limit:
         text = '\n'.join(build_lines(product['genres'][:2], copy))
 
-    # それでも文字数を超える場合は、おすすめポイントをさらに切り詰めて再調整
+    # ── ② おすすめポイントを切り詰める ─────────────────────────────
     if x_text_length(text) > char_limit:
         over = x_text_length(text) - char_limit
         copy_budget = max(10, x_text_length(copy) - over)
         short_copy = truncate_to_weighted_length(copy, copy_budget)
         text = text.replace(copy, short_copy, 1)
 
+    # ── ③ サンプルURLを除く ─────────────────────────────────────────
+    if x_text_length(text) > char_limit and sample:
+        text = '\n'.join(build_lines(product['genres'][:2], copy)).replace(
+            f"\n▶ サンプル: {sample}", ''
+        )
+
+    # ── ④ おすすめポイント自体を除く ────────────────────────────────
+    if x_text_length(text) > char_limit:
+        text = '\n'.join(build_lines([], ''))
+
+    # ── ⑤ ハッシュタグをベースのみに削減（#FANZA #PR のみ）─────────
+    if x_text_length(text) > char_limit:
+        minimal_tags = '#FANZA #PR'
+        text = re.sub(r'#FANZA.*$', minimal_tags, text, flags=re.DOTALL)
+
+    # ── ⑥ 最終手段：末尾から強制切り詰め ───────────────────────────
+    if x_text_length(text) > char_limit:
+        text = truncate_to_weighted_length(text, char_limit)
+
+    assert x_text_length(text) <= char_limit, (
+        f"⚠️ 文字数超過バグ: {x_text_length(text)} > {char_limit}\n{text}"
+    )
     return text
 
 # ================================================================
