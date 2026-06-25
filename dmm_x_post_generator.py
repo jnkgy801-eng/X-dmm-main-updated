@@ -618,7 +618,7 @@ def build_x_thread(product, char_limit=280):
         return '　'.join(extras)
 
     # ================================================================
-    # ── 1ポスト目：引き＋タイトル＋URL（シンプルに）
+    # ── 1ポスト目：引き＋タイトル＋サンプルURL（無料なので踏みやすい）
     # ================================================================
     HEADERS = [
         "これ絶対見て👇",
@@ -630,7 +630,9 @@ def build_x_thread(product, char_limit=280):
     hook = random.choice(COPY_TEMPLATES)
     header = random.choice(HEADERS)
 
-    post1_lines = [header, f"📽 {title_short}", '', hook, '', url]
+    # サンプルがある場合は1ポスト目に置く。ない場合はアフィリエイトURLで代替。
+    post1_url = sample if sample else url
+    post1_lines = [header, f"📽 {title_short}", '', hook, '', f"▶ 無料サンプル: {post1_url}" if sample else post1_url]
     post1 = '\n'.join(post1_lines)
 
     # 1ポスト目が280字を超える場合はhookを切り詰める
@@ -638,7 +640,7 @@ def build_x_thread(product, char_limit=280):
         over = x_text_length(post1) - char_limit
         hook_budget = max(10, x_text_length(hook) - over)
         hook = truncate_to_weighted_length(hook, hook_budget)
-        post1_lines = [header, f"📽 {title_short}", '', hook, '', url]
+        post1_lines = [header, f"📽 {title_short}", '', hook, '', f"▶ 無料サンプル: {post1_url}" if sample else post1_url]
         post1 = '\n'.join(post1_lines)
 
     assert x_text_length(post1) <= char_limit, (
@@ -646,13 +648,13 @@ def build_x_thread(product, char_limit=280):
     )
 
     # ================================================================
-    # ── 2ポスト目：詳細情報＋ハッシュタグ（スレッドの続き）
+    # ── 2ポスト目：詳細情報＋アフィリエイトURL＋ハッシュタグ
     # ================================================================
     extra = extra_genre_hashtags(product['genres'])
     full_hashtags = hashtags + ('　' + extra if extra else '')
 
     def build_post2_lines(genre_list, copy_text):
-        lines = ['📌 詳細はこちら']
+        lines = ['📌 気に入ったら本編はこちら👇']
         if copy_text:
             lines += ['', copy_text]
         lines.append('')
@@ -662,9 +664,7 @@ def build_x_thread(product, char_limit=280):
             lines.append(f"👤 {act_tags}")
         if genre_list:
             lines.append(f"🏷 {genre_tags(genre_list)}")
-        if sample:
-            lines.append(f"▶ サンプル: {sample}")
-        lines += ['', full_hashtags]
+        lines += ['', url, '', full_hashtags]
         return lines
 
     # おすすめポイントに使える文字数を逆算
@@ -681,10 +681,6 @@ def build_x_thread(product, char_limit=280):
         over = x_text_length(post2) - char_limit
         copy = truncate_to_weighted_length(copy, max(10, x_text_length(copy) - over))
         post2 = '\n'.join(build_post2_lines(product['genres'][:2], copy))
-    if x_text_length(post2) > char_limit and sample:
-        post2 = '\n'.join(build_post2_lines(product['genres'][:2], copy)).replace(
-            f"\n▶ サンプル: {sample}", ''
-        )
     if x_text_length(post2) > char_limit:
         post2 = '\n'.join(build_post2_lines([], ''))
     if x_text_length(post2) > char_limit:
@@ -987,10 +983,10 @@ def post_to_x_api(api_v1, client_v2, product, thread_texts):
             return False
 
         post1_text = thread_texts[0]
-        # 動画埋め込み時はサンプルURL行を除去（動画プレビューで代替される）
+        # 動画添付時はサンプルURLのテキスト行を除去（動画プレビューで代替される）
         post1_text = '\n'.join(
             line for line in post1_text.split('\n')
-            if not line.startswith('▶ サンプル動画:') and not line.startswith('▶ サンプル:')
+            if not line.startswith('▶ 無料サンプル:')
         )
 
         tweet_id = post_tweet_with_video(client_v2, post1_text, media_id)
@@ -1049,7 +1045,7 @@ def post_to_x_browser(context, page, product, thread_texts):
 
     post1_text = '\n'.join(
         line for line in thread_texts[0].split('\n')
-        if not line.startswith('▶ サンプル動画:') and not line.startswith('▶ サンプル:')
+        if not line.startswith('▶ 無料サンプル:')
     )
 
     try:
