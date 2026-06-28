@@ -1266,7 +1266,9 @@ for sort_key, sort_label in SORT_LIST:
     remaining_quota = MAX_PROCESS_COUNT - processed_total
     # このソートで目指す件数（上限 and 最低保証の両方を考慮）
     sort_target = min(remaining_quota, MAX_PROCESS_COUNT // len(SORT_LIST) if len(SORT_LIST) > 1 else MAX_PROCESS_COUNT)
-    min_target  = min(MIN_PROCESS_COUNT, remaining_quota) if PRICE_RANGE_BOUNDS and MIN_PROCESS_COUNT > 0 else 0
+    # 最低保証件数：価格フィルターの有無にかかわらず常に適用
+    # （サンプルURLなしスキップも含め、フィルターで大きく件数が落ちることに対応）
+    min_target = min(MIN_PROCESS_COUNT, remaining_quota) if MIN_PROCESS_COUNT > 0 else 0
 
     products      = []
     fetch_offset  = DMM_OFFSET
@@ -1274,9 +1276,8 @@ for sort_key, sort_label in SORT_LIST:
     seen_ids      = set()
     MAX_FETCH_ROUNDS = 20  # 無限ループ防止: 最大20回まで追加取得（20件確保のため増量）
 
-    # 価格フィルターあり＆最低件数指定がある場合は、最低件数を優先してループ上限を拡大
-    # remaining_quota は絶対上限だが、min_target には達するまで追加取得を続ける
-    effective_min = min_target if PRICE_RANGE_BOUNDS and MIN_PROCESS_COUNT > 0 else 0
+    # 価格フィルター・サンプルフィルター両方を考慮して最低件数まで追加取得を続ける
+    effective_min = min_target if MIN_PROCESS_COUNT > 0 else 0
 
     for _round in range(MAX_FETCH_ROUNDS):
         raw_items = fetch_dmm_products(sort_key, sort_label, offset=fetch_offset, hits=fetch_hits)
@@ -1305,7 +1306,8 @@ for sort_key, sort_label in SORT_LIST:
                 break
 
         collected = len(products)
-        need_more = PRICE_RANGE_BOUNDS and MIN_PROCESS_COUNT > 0 and collected < min_target
+        # 価格フィルター・サンプルフィルターどちらでスキップされた場合も追加取得を継続する
+        need_more = MIN_PROCESS_COUNT > 0 and collected < min_target
         print(f'  📦 [{sort_label}] 累計確保: {collected}件 / 目標最低: {min_target}件')
 
         if not need_more or len(raw_items) < fetch_hits:
@@ -1322,9 +1324,8 @@ for sort_key, sort_label in SORT_LIST:
         print(f'  💰 価格フィルター適用済み: 合計 {len(products)} 件確保')
 
     # 合計処理件数の上限を適用
-    # ※ 価格フィルターあり＆最低保証件数が設定されている場合は、min_target を優先して
-    #   MAX_PROCESS_COUNT を超えても最低件数までは確保する（最大 min_target まで）
-    if PRICE_RANGE_BOUNDS and MIN_PROCESS_COUNT > 0:
+    # min_target を優先：フィルターで件数が落ちた場合は min_target まで確保した分を守る
+    if MIN_PROCESS_COUNT > 0:
         effective_cap = max(remaining_quota, min(min_target, len(products)))
     else:
         effective_cap = remaining_quota
