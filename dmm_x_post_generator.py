@@ -639,9 +639,20 @@ def build_x_thread(product, char_limit=280):
     hook = random.choice(COPY_TEMPLATES)
     header = random.choice(HEADERS)
 
-    # サンプルがある場合は1ポスト目に置く。ない場合はアフィリエイトURLで代替。
-    post1_url = sample if sample else url
-    post1_lines = [header, f"📽 {title_short}", '', hook, '', f"▶ 無料サンプル: {post1_url}" if sample else post1_url]
+    # videoa の場合はポスト1 = サンプル動画URL専用。
+    # サンプルがなければポスト1はシンプルなテキストのみ（URLなし）にして、
+    # アフィリエイトリンクはポスト2に集約する。
+    if DMM_FLOOR == 'videoa':
+        if sample:
+            post1_lines = [header, f"📽 {title_short}", '', hook, '', f"▶ 無料サンプル: {sample}"]
+        else:
+            # サンプルなし：ポスト1はテキストのみ（アフィリエイトURLは含めない）
+            post1_lines = [header, f"📽 {title_short}", '', hook]
+    else:
+        # videoa 以外の従来動作：サンプルがあれば1ポスト目に、なければアフィリエイトURLで代替
+        post1_url = sample if sample else url
+        post1_lines = [header, f"📽 {title_short}", '', hook, '', f"▶ 無料サンプル: {post1_url}" if sample else post1_url]
+
     post1 = '\n'.join(post1_lines)
 
     # 1ポスト目が280字を超える場合はhookを切り詰める
@@ -649,7 +660,18 @@ def build_x_thread(product, char_limit=280):
         over = x_text_length(post1) - char_limit
         hook_budget = max(10, x_text_length(hook) - over)
         hook = truncate_to_weighted_length(hook, hook_budget)
-        post1_lines = [header, f"📽 {title_short}", '', hook, '', f"▶ 無料サンプル: {post1_url}" if sample else post1_url]
+        post1_lines = [l if '▶ 無料サンプル:' not in l and l != hook else
+                       (f"▶ 無料サンプル: {sample}" if '▶ 無料サンプル:' in l else hook)
+                       for l in post1_lines]
+        # hookだけ差し替えて再構築
+        if DMM_FLOOR == 'videoa':
+            if sample:
+                post1_lines = [header, f"📽 {title_short}", '', hook, '', f"▶ 無料サンプル: {sample}"]
+            else:
+                post1_lines = [header, f"📽 {title_short}", '', hook]
+        else:
+            post1_url = sample if sample else url
+            post1_lines = [header, f"📽 {title_short}", '', hook, '', f"▶ 無料サンプル: {post1_url}" if sample else post1_url]
         post1 = '\n'.join(post1_lines)
 
     assert x_text_length(post1) <= char_limit, (
@@ -663,7 +685,11 @@ def build_x_thread(product, char_limit=280):
     full_hashtags = hashtags + ('　' + extra if extra else '')
 
     def build_post2_lines(genre_list, copy_text):
-        lines = ['📌 気に入ったら本編はこちら👇']
+        # videoa の場合はポスト2がアフィリエイトリンク専用であることを明示
+        if DMM_FLOOR == 'videoa':
+            lines = ['🛒 気に入ったら本編をチェック👇']
+        else:
+            lines = ['📌 気に入ったら本編はこちら👇']
         if copy_text:
             lines += ['', copy_text]
         lines.append('')
