@@ -646,16 +646,11 @@ def build_x_thread(product, char_limit=280):
     header = random.choice(HEADERS)
 
     # videoa の場合はポスト1 = サンプル動画URL専用。
-    # サンプルがなければポスト1はシンプルなテキストのみ（URLなし）にして、
-    # アフィリエイトリンクはポスト2に集約する。
+    # ※ 取得ループでサンプルURLなし商品を除外済みのため、ここでは必ず sample が存在する。
     if DMM_FLOOR == 'videoa':
-        if sample:
-            post1_lines = [header, f"📽 {title_short}", '', hook, '', f"▶ 無料サンプル: {sample}"]
-        else:
-            # サンプルなし：ポスト1はテキストのみ（アフィリエイトURLは含めない）
-            post1_lines = [header, f"📽 {title_short}", '', hook]
+        post1_lines = [header, f"📽 {title_short}", '', hook, '', f"▶ 無料サンプル: {sample}"]
     else:
-        # videoa 以外の従来動作：サンプルがあれば1ポスト目に、なければアフィリエイトURLで代替
+        # videoa 以外：サンプルURLを優先、なければアフィリエイトURL（ただし通常ここには来ない）
         post1_url = sample if sample else url
         post1_lines = [header, f"📽 {title_short}", '', hook, '', f"▶ 無料サンプル: {post1_url}" if sample else post1_url]
 
@@ -666,15 +661,8 @@ def build_x_thread(product, char_limit=280):
         over = x_text_length(post1) - char_limit
         hook_budget = max(10, x_text_length(hook) - over)
         hook = truncate_to_weighted_length(hook, hook_budget)
-        post1_lines = [l if '▶ 無料サンプル:' not in l and l != hook else
-                       (f"▶ 無料サンプル: {sample}" if '▶ 無料サンプル:' in l else hook)
-                       for l in post1_lines]
-        # hookだけ差し替えて再構築
         if DMM_FLOOR == 'videoa':
-            if sample:
-                post1_lines = [header, f"📽 {title_short}", '', hook, '', f"▶ 無料サンプル: {sample}"]
-            else:
-                post1_lines = [header, f"📽 {title_short}", '', hook]
+            post1_lines = [header, f"📽 {title_short}", '', hook, '', f"▶ 無料サンプル: {sample}"]
         else:
             post1_url = sample if sample else url
             post1_lines = [header, f"📽 {title_short}", '', hook, '', f"▶ 無料サンプル: {post1_url}" if sample else post1_url]
@@ -1304,6 +1292,10 @@ for sort_key, sort_label in SORT_LIST:
                 seen_ids.add(cid)
             p = parse_product(item)
             if PRICE_RANGE_BOUNDS and not price_in_range(p):
+                continue
+            # サンプル動画URLがない商品はポスト1にURLを付けられないためスキップ
+            if not p.get('sample_movie_url'):
+                print(f"    ⏭ サンプルURLなしのためスキップ: {p['title'][:30]}")
                 continue
             products.append(p)
             # 価格フィルターなし or min_target未達の場合は remaining_quota で止める
