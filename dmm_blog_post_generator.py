@@ -365,8 +365,19 @@ def build_article_html(product):
 
     parts = []
 
+    # ── 本文全体のコンテナ ──
+    # ブログのデザインテーマ（背景が暗い等）に左右されず、本文は常に
+    # 白背景・濃いめの文字色で読みやすく表示されるようにする。
+    # フォントも游ゴシック／ヒラギノ系の読みやすい書体に統一する。
+    BODY_FONT = ("'Hiragino Kaku Gothic ProN','Hiragino Sans','Yu Gothic Medium',"
+                 "'Yu Gothic','Meiryo',sans-serif")
+    parts.append(
+        f'<div style="background:#ffffff;color:#333333;font-family:{BODY_FONT};'
+        f'line-height:1.9;padding:20px;border-radius:8px;">'
+    )
+
     # ── アフィリエイト表記（景品表示法対策）──
-    parts.append('<p style="font-size:11px;color:#aaa;border-bottom:1px solid #eee;padding-bottom:12px;margin-bottom:16px;">※本記事にはアフィリエイトリンクが含まれます。</p>')
+    parts.append('<p style="font-size:12px;color:#888;border-bottom:1px solid #eee;padding-bottom:12px;margin-bottom:16px;">※本記事にはアフィリエイトリンクが含まれます。</p>')
 
     # ── ジャケ写を記事冒頭に大きく表示（視覚的インパクト重視）──
     # ※ 画像が表示されない場合：はてなブログ管理画面 → 設定 → 詳細設定
@@ -582,6 +593,8 @@ def build_article_html(product):
             f'<a href="{blog_base_url}/" style="font-weight:bold;color:#e60033;text-decoration:none;">'
             f'他のおすすめ作品も見る →</a></p>'
         )
+
+    parts.append('</div>')
 
     return '\n'.join(parts)
 
