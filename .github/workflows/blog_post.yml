@@ -52,9 +52,18 @@ on:
     - cron: '0 0 * * *'    # UTC 0:00  = 日本時間  9:00（朝）
     - cron: '0 10 * * *'   # UTC 10:00 = 日本時間 19:00（夜）
 
+# 投稿履歴ファイル（posted_history.json）をリポジトリにコミットするために必要
+permissions:
+  contents: write
+
 jobs:
   blog-post:
     runs-on: ubuntu-latest
+
+    # 同時に複数のワークフローが走って履歴ファイルが競合しないようにする
+    concurrency:
+      group: hatena-blog-post
+      cancel-in-progress: false
 
     steps:
       - name: リポジトリをチェックアウト
@@ -95,4 +104,19 @@ jobs:
           BLOG_POST_LIMIT:  ${{ github.event.inputs.blog_post_limit || '5' }}
           BLOG_DRAFT:       ${{ github.event.inputs.blog_draft || 'false' }}
           POST_START_INDEX: ${{ steps.set_start.outputs.start_index }}
+          POSTED_HISTORY_PATH: posted_history.json
         run: python dmm_blog_post_generator.py
+
+      # ─── 投稿履歴ファイルをリポジトリにコミット（重複投稿防止のため永続化）───
+      - name: 投稿履歴をコミット・プッシュ
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ -n "$(git status --porcelain posted_history.json 2>/dev/null)" ]; then
+            git add posted_history.json
+            git commit -m "chore: 投稿履歴を更新 ($(date -u +'%Y-%m-%d %H:%M UTC'))"
+            git push
+            echo "✅ 投稿履歴をコミットしました"
+          else
+            echo "ℹ️ 投稿履歴に変更なし（新規投稿なし、または下書きモード）"
+          fi
