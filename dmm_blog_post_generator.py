@@ -212,18 +212,46 @@ def star_rating_html(avg):
     return '★' * full + ('☆' if half else '') + '☆' * empty
 
 
+def clean_title_for_seo(title):
+    """検索結果での表示を意識してタイトルをクレンジングする。
+    【】で囲まれた装飾タグ（【VR】【8K VR】など）を除去し、
+    本質的な作品名だけを抽出する。
+    """
+    import re
+    # 【...】形式の装飾タグをすべて除去（複数連続にも対応）
+    cleaned = re.sub(r'【[^】]*】', '', title)
+    # 全角スペース・連続スペースを整理
+    cleaned = re.sub(r'[\s　]+', ' ', cleaned).strip()
+    return cleaned if cleaned else title  # 万一空になったら元のタイトルを使う
+
+
 def build_article_title(product):
     """SEOを意識した記事タイトルを生成する。
+    Googleの検索結果は全角で約32文字までしか表示されないため、
+    タイトル全体を35文字以内に収める設計にする。
     ロングテールキーワード（女優名 + 作品名 + レビュー）を含める。
     """
     actors = product['actors']
-    title  = product['title']
+    raw_title = product['title']
+    clean_title = clean_title_for_seo(raw_title)
 
     if actors:
-        actor_str = '・'.join(actors[:2])
-        return f'【FANZA】{actor_str}「{title[:30]}」レビュー・サンプルあり'
+        # 女優名は1名のみ使用（2名だと文字数を圧迫するため）
+        actor_str = actors[0]
+        # 「【FANZA】女優名「作品名」レビュー」で35文字以内に収める
+        prefix = f'【FANZA】{actor_str}「'
+        suffix = '」レビュー'
+        max_title_len = 35 - len(prefix) - len(suffix)
+        max_title_len = max(8, max_title_len)
+        short_title = clean_title[:max_title_len]
+        return f'{prefix}{short_title}{suffix}'
     else:
-        return f'【FANZA】{title[:40]}｜レビュー・サンプル動画あり'
+        prefix = '【FANZA】'
+        suffix = '｜レビューあり'
+        max_title_len = 35 - len(prefix) - len(suffix)
+        max_title_len = max(8, max_title_len)
+        short_title = clean_title[:max_title_len]
+        return f'{prefix}{short_title}{suffix}'
 
 
 def build_article_html(product):
@@ -430,10 +458,40 @@ def build_article_html(product):
 </div>
 ''')
 
-    # ── 関連ジャンルタグ ──
+    # ── 関連ジャンルタグ（DMM内検索へのリンク） ──
     if genres:
         genre_tags = '　'.join([f'<a href="https://www.dmm.co.jp/search/=/searchstr={requests.utils.quote(g)}/" target="_blank" rel="nofollow noopener">{g}</a>' for g in genres])
-        parts.append(f'<p>関連ジャンル: {genre_tags}</p>')
+        parts.append(f'<p style="font-size:13px;color:#666;">関連ジャンル: {genre_tags}</p>')
+
+    # ── 内部リンク（同ブログ内の関連記事へ誘導）──
+    # はてなブログのカテゴリアーカイブページを利用。
+    # 同じ女優・同じジャンルのカテゴリページには、過去に投稿した関連記事が自動的に一覧表示される。
+    # これにより1記事だけで離脱せず、サイト内を回遊してもらう導線を作る。
+    blog_base_url = os.environ.get('HATENA_BLOG_BASE_URL', '')
+    if blog_base_url:
+        internal_links = []
+        if actors:
+            for actor in actors[:2]:
+                cat_url = f'{blog_base_url}/archive/category/{requests.utils.quote(actor)}'
+                internal_links.append(f'<a href="{cat_url}">{actor}の他の作品はこちら</a>')
+        if genres:
+            for genre in genres[:1]:
+                cat_url = f'{blog_base_url}/archive/category/{requests.utils.quote(genre)}'
+                internal_links.append(f'<a href="{cat_url}">{genre}の関連記事一覧</a>')
+
+        if internal_links:
+            parts.append('<h2 style="border-bottom:3px solid #999;padding-bottom:6px;margin-top:32px;">関連記事</h2>')
+            parts.append('<ul style="list-style:none;padding-left:0;">')
+            for link in internal_links:
+                parts.append(f'<li style="padding:8px 0;border-bottom:1px solid #eee;">{link}</li>')
+            parts.append('</ul>')
+
+        # トップページへの導線も追加（新着記事一覧へ）
+        parts.append(
+            f'<p style="text-align:center;margin:24px 0;padding:16px;background:#f9f9f9;border-radius:8px;">'
+            f'<a href="{blog_base_url}/" style="font-weight:bold;color:#e60033;text-decoration:none;">'
+            f'他のおすすめ作品も見る →</a></p>'
+        )
 
     return '\n'.join(parts)
 
