@@ -145,29 +145,65 @@ def save_posted_history(posted_ids_set):
 # ================================================================
 
 def fetch_dmm_products(sort_key='-rank', hits=20, offset=1):
+    """DMM APIから商品一覧を取得する。
+    DMM APIの hits パラメータは1回のリクエストで最大100件までという制限があるため、
+    100件を超えるリクエストは複数回に分けてページネーションする。
+    """
     service, floor_name = FLOOR_SERVICE_MAP.get(DMM_FLOOR, ('digital', 'videoa'))
-    params = {
-        'api_id':       DMM_API_ID,
-        'affiliate_id': DMM_AFFILIATE_ID,
-        'site':         'FANZA',
-        'service':      service,
-        'floor':        floor_name,
-        'hits':         hits,
-        'offset':       offset,
-        'sort':         sort_key,
-        'output':       'json',
-    }
-    try:
-        resp = requests.get(f'{DMM_API_BASE}/ItemList', params=params, timeout=15)
-        data = resp.json()
-        items = data.get('result', {}).get('items', [])
-        if isinstance(items, dict):
-            items = items.get('item', [])
-        print(f'  ✅ {len(items)} 件取得しました。')
-        return items
-    except Exception as e:
-        print(f'  ❌ DMM APIエラー: {e}')
-        return []
+
+    DMM_MAX_HITS_PER_REQUEST = 100
+    all_items = []
+    remaining = hits
+    current_offset = offset
+
+    while remaining > 0:
+        request_hits = min(remaining, DMM_MAX_HITS_PER_REQUEST)
+        params = {
+            'api_id':       DMM_API_ID,
+            'affiliate_id': DMM_AFFILIATE_ID,
+            'site':         'FANZA',
+            'service':      service,
+            'floor':        floor_name,
+            'hits':         request_hits,
+            'offset':       current_offset,
+            'sort':         sort_key,
+            'output':       'json',
+        }
+        try:
+            resp = requests.get(f'{DMM_API_BASE}/ItemList', params=params, timeout=15)
+            data = resp.json()
+
+            # APIエラーレスポンスのチェック（result.statusが200以外などの場合）
+            result = data.get('result', {})
+            status = result.get('status')
+            if status and str(status) != '200':
+                err_msg = result.get('message', '不明なエラー')
+                print(f'  ❌ DMM APIがエラーを返しました (status={status}): {err_msg}')
+                break
+
+            items = result.get('items', [])
+            if isinstance(items, dict):
+                items = items.get('item', [])
+
+            if not items:
+                # これ以上ページがない（在庫の終端に達した）
+                break
+
+            all_items.extend(items)
+            print(f'  ✅ {len(items)} 件取得（offset={current_offset}, 累計{len(all_items)}件）')
+
+            current_offset += request_hits
+            remaining -= request_hits
+
+            # 取得件数がリクエスト数より少なければ、それ以上ページがない
+            if len(items) < request_hits:
+                break
+
+        except Exception as e:
+            print(f'  ❌ DMM APIエラー: {e}')
+            break
+
+    return all_items
 
 
 def parse_product(item):
@@ -677,7 +713,11 @@ already_posted_ids = load_posted_history()
 
 # 重複を避けるため、必要数より多めに取得しておく
 # （履歴フィルターで除外される分を見込んで広めに取得する）
-raw_items = fetch_dmm_products(sort_key=sort_key, hits=BLOG_POST_LIMIT * 6, offset=POST_START_INDEX)
+# 重複除外を見込んで多めに取得する（投稿上限の6倍、ただし300件を上限とする）
+# ※ DMM APIは1リクエスト最大100件だが、fetch_dmm_products内でページネーションして
+#    複数回リクエストするため300件等の取得も可能
+fetch_hits = min(BLOG_POST_LIMIT * 6, 300)
+raw_items = fetch_dmm_products(sort_key=sort_key, hits=fetch_hits, offset=POST_START_INDEX)
 
 if not raw_items:
     print('❌ 商品が1件も取得できませんでした。')
